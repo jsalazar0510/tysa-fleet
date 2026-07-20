@@ -272,7 +272,7 @@ const I18N = {
   es:{sub:"Hoja de vida por vehículo",fleet:"Flota TYSA",vehicles:"vehículos",updated:"Datos en vivo del Google Sheet",
     kOverdue:"Vencidos",kSoon:"Próximos",kOpenOT:"OTs abiertas",kActive:"Activos",
     resp:"Responsable",mileage:"Millaje",plate:"Placa",back:"← Atrás",addVeh:"Agregar vehículo",
-    print:"Imprimir hoja de vida",report:"Report (EN) → PDF",
+    print:"Imprimir hoja de vida",report:"Report (EN) → PDF",delVeh:"🗑 Eliminar vehículo",delConfirm1:"¿Seguro que quieres eliminar {ID} y TODO su historial (inspecciones, tanqueos, lavadas, órdenes y plan)? Esta acción no se puede deshacer.",delConfirm2:"ÚLTIMA CONFIRMACIÓN: se borrará {ID} definitivamente del Sheet. ¿Continuar?",delOk:"✔ Vehículo eliminado",
     specVin:"VIN",specYear:"Año",specBrand:"Marca / Modelo",specResp:"Responsable",specMi:"Millaje actual",specMiDate:"Últ. lectura",specPlate:"Placa",
     secDocs:"Documentos",docTitle:"Título del vehículo",docIns:"Póliza de seguro",docOpen:"Ver",docMiss:"Sin cargar",docUpload:"📎 Subir documento",
     insExp:"Vence",insExpired:"SEGURO VENCIDO",insSoon:"Seguro por vencer",
@@ -297,7 +297,7 @@ const I18N = {
   en:{sub:"Vehicle maintenance record",fleet:"TYSA Fleet",vehicles:"vehicles",updated:"Live data from Google Sheets",
     kOverdue:"Overdue",kSoon:"Due soon",kOpenOT:"Open WOs",kActive:"Active",
     resp:"Assigned to",mileage:"Mileage",plate:"Plate",back:"← Back",addVeh:"Add vehicle",
-    print:"Print record",report:"Report (EN) → PDF",
+    print:"Print record",report:"Report (EN) → PDF",delVeh:"🗑 Delete vehicle",delConfirm1:"Delete {ID} and ALL its history (inspections, fuel, washes, work orders, plan)? This cannot be undone.",delConfirm2:"FINAL CONFIRMATION: {ID} will be permanently removed. Continue?",delOk:"✔ Vehicle deleted",
     specVin:"VIN",specYear:"Year",specBrand:"Make / Model",specResp:"Assigned to",specMi:"Current mileage",specMiDate:"Last reading",specPlate:"Plate",
     secDocs:"Documents",docTitle:"Vehicle title",docIns:"Insurance policy",docOpen:"Open",docMiss:"Not uploaded",docUpload:"📎 Upload document",
     insExp:"Expires",insExpired:"INSURANCE EXPIRED",insSoon:"Insurance expiring",
@@ -777,8 +777,28 @@ function renderVehicle(vid){
 
     <div class="section"><h3>${t("secInsp")}<span class="count">${s.insp.length}</span></h3>
       <div class="body">${inspSorted.length?`<table><thead><tr><th>${t("thDate")}</th><th>${t("thDriver")}</th><th>${t("thMi")}</th><th>${t("thFails")}</th><th>${t("thFit")}</th><th>${t("thObs")}</th><th>${t("thPhotos")}</th></tr></thead><tbody>${inspRows}</tbody></table>`:`<div class="empty">${t("none")}</div>`}</div>
+    </div>
+
+    <div style="text-align:right;margin:26px 0 8px">
+      <button onclick="eliminarVehiculo('${esc(v.id).replace(/'/g,"\\'")}')"
+        style="background:#fff;border:2px solid #E5B8B4;color:#B3261E;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:bold;cursor:pointer">${t("delVeh")}</button>
     </div>`;
 }
+window.eliminarVehiculo=async function(vid){
+  if(!confirm(t("delConfirm1").replace("{ID}",vid)))return;
+  if(!confirm(t("delConfirm2").replace("{ID}",vid)))return;
+  try{
+    await sendAction({tipo:"deleteVehicle",vehiculo:vid});
+    DATA.veh=DATA.veh.filter(v=>v.id!==vid);
+    DATA.plan=(DATA.plan||[]).filter(x=>x.vid!==vid);
+    DATA.insp=(DATA.insp||[]).filter(x=>x.vid!==vid);
+    DATA.ots=(DATA.ots||[]).filter(x=>x.vid!==vid);
+    DATA.fuel=(DATA.fuel||[]).filter(x=>x.vid!==vid);
+    DATA.wash=(DATA.wash||[]).filter(x=>x.vid!==vid);
+    toast(t("delOk"));
+    go("#/");
+  }catch(e){alert("❌ No se pudo eliminar. Intenta de nuevo.")}
+};
 window.printEN=()=>{const prev=lang;lang="en";render();setTimeout(()=>{window.print();lang=prev;render()},150)};
 
 /* ---------- marcar tarea preventiva como hecha ---------- */
