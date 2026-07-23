@@ -401,7 +401,7 @@ async function loadAll(){
   const plan=rowsAfterHeader(rp,"id veh").map(r=>({vid:norm(r[0]),task:norm(r[1]),lastDate:norm(r[4]),lastMi:norm(r[5]),nextMi:norm(r[6]),nextDate:norm(r[7]),status:norm(r[9]),sys:norm(r[10])}));
   const insp=rowsAfterHeader(ri,"fecha").map(r=>({date:norm(r[0]),vid:norm(r[1]),driver:norm(r[2]),mi:norm(r[3]),items:{Llantas:norm(r[4]),Frenos:norm(r[5]),Luces:norm(r[6]),Fluidos:norm(r[7]),Fugas:norm(r[8]),"Boom/Hidráulico":norm(r[9]),Seguridad:norm(r[10])},fit:norm(r[11]),obs:norm(r[12]),photos:norm(r[13])}));
   const ots=rowsAfterHeader(ro,"ot").map(r=>({ot:norm(r[0]),date:norm(r[1]),vid:norm(r[2]),type:norm(r[3]),origin:norm(r[4]),desc:norm(r[5]),shop:norm(r[6]),status:norm(r[7]),closed:norm(r[8]),parts:norm(r[9]),labor:norm(r[10]),total:norm(r[11]),docs:norm(r[12]),notes:norm(r[13])}));
-  const fuel=rowsAfterHeader(rt,"fecha").map(r=>({date:norm(r[0]),vid:norm(r[1]),driver:norm(r[2]),mi:norm(r[3]),gal:norm(r[4]),cost:norm(r[5]),ppg:norm(r[6]),station:norm(r[7]),receipt:norm(r[8])}));
+  const fuel=rowsAfterHeader(rt,"fecha").map(r=>({date:norm(r[0]),vid:norm(r[1]),driver:norm(r[2]),mi:norm(r[3]),gal:norm(r[4]),cost:norm(r[5]),ppg:norm(r[6]),station:norm(r[7]),receipt:norm(r[8]),defGal:norm(r[9]||""),defCost:norm(r[10]||"")}));
   const wash=rowsAfterHeader(rl,"fecha").map(r=>({date:norm(r[0]),vid:norm(r[1]),who:norm(r[2]),kind:norm(r[3]),cost:norm(r[4]),place:norm(r[5]),photos:norm(r[6]),notes:norm(r[7])}));
   const crew=rowsAfterHeader(rc,"nombre").map(r=>({name:norm(r[0]),role:norm(r[1]),phone:norm(r[2]),veh:norm(r[3]),licExp:norm(r[4]),state:norm(r[5])}));
   DATA={veh,plan,insp,ots,fuel,wash,crew};
@@ -1019,12 +1019,13 @@ function renderTeam(){
     <button class="backbtn" onclick="goBack()">${t("back")}</button>
     <div class="fleethead"><h1>${t("teamTitle")}</h1></div>
     <div class="section"><h3>${t("teamTitle")}<span class="count">${crew.length}</span></h3>
-      <div class="body">${crew.length?`<table><thead><tr><th>${t("thName")}</th><th>${t("thRole")}</th><th>${t("thPhone")}</th><th>${t("thAssigned")}</th><th>${t("thLic")}</th></tr></thead><tbody>${
+      <div class="body">${crew.length?`<table><thead><tr><th>${t("thName")}</th><th>${t("thRole")}</th><th>${t("thPhone")}</th><th>${t("thAssigned")}</th><th>${t("thLic")}</th><th></th></tr></thead><tbody>${
         crew.map(c=>{const ls=licStatus(c);return`<tr>
           <td><b>${esc(c.name)}</b>${/inactivo|inactive/i.test(c.state)?' <span class="st gray">Inactivo</span>':""}</td>
           <td>${esc(c.role)||"—"}</td><td class="mono">${esc(c.phone)||"—"}</td>
           <td class="mono">${c.veh?`<a href="#/vehiculo/${encodeURIComponent(c.veh)}">${esc(c.veh)}</a>`:"—"}</td>
-          <td>${c.licExp?`<span class="st ${ls==="danger"?"danger":ls==="warn"?"warn":"ok"}">${esc(c.licExp)}${ls==="danger"?" · "+t("licExpired"):ls==="warn"?" · "+t("licSoon"):""}</span>`:"—"}</td></tr>`}).join("")
+          <td>${c.licExp?`<span class="st ${ls==="danger"?"danger":ls==="warn"?"warn":"ok"}">${esc(c.licExp)}${ls==="danger"?" · "+t("licExpired"):ls==="warn"?" · "+t("licSoon"):""}</span>`:"—"}</td>
+          <td><button onclick="eliminarPersona('${esc(c.name).replace(/'/g,"\\'")}')" style="background:none;border:0;cursor:pointer;font-size:15px" title="Eliminar">🗑</button></td></tr>`}).join("")
       }</tbody></table>`:`<div class="empty">${t("none")}</div>`}</div>
     </div>
     <div class="formcard frm" style="margin:0">
@@ -1042,6 +1043,14 @@ function renderTeam(){
       <button class="sendbtn" id="cGo">Guardar persona</button>
       <div class="dmsg" id="cMsg"></div>
     </div>`;
+  window.eliminarPersona=async(nombre)=>{
+    if(!confirm("¿Eliminar a "+nombre+" de la lista? Su historial de inspecciones y tanqueos NO se borra."))return;
+    try{
+      await sendAction({tipo:"deleteDriver",nombre:nombre});
+      DATA.crew=(DATA.crew||[]).filter(c=>c.name!==nombre);
+      toast("✔ Persona eliminada");render();
+    }catch(e){alert("❌ No se pudo eliminar. Intenta de nuevo.")}
+  };
   document.getElementById("cGo").onclick=async()=>{
     const pers={name:norm(fv("cName")),role:fv("cRole"),phone:norm(fv("cPhone")),veh:fv("cVeh"),licExp:norm(fv("cLic")),state:"Activo"};
     const msg=document.getElementById("cMsg");
@@ -1081,20 +1090,21 @@ function renderFuelReport(){
   });
   const totCost=rows.reduce((a,f)=>a+money(f.cost),0);
   const totGal=rows.reduce((a,f)=>a+(parseFloat(f.gal)||0),0);
+  const totDef=rows.reduce((a,f)=>a+money(f.defCost),0);
   const avg=totGal>0?totCost/totGal:0;
   // agrupar por semana (lunes a domingo)
   const weeks={};
   rows.forEach(f=>{const d=parseDate(f.date);const ws=weekStart(d);const k=toISO(ws);
-    weeks[k]=weeks[k]||{start:ws,cost:0,gal:0,n:0};
-    weeks[k].cost+=money(f.cost);weeks[k].gal+=parseFloat(f.gal)||0;weeks[k].n++});
+    weeks[k]=weeks[k]||{start:ws,cost:0,gal:0,n:0,def:0};
+    weeks[k].cost+=money(f.cost);weeks[k].gal+=parseFloat(f.gal)||0;weeks[k].def+=money(f.defCost);weeks[k].n++});
   const weekRows=Object.values(weeks).sort((a,b)=>b.start-a.start);
   const wkLabel=ws=>{const we=new Date(ws.getTime()+6*864e5);
     const f=d=>d.toLocaleDateString(lang==="es"?"es-CO":"en-US",{month:"short",day:"numeric"});
     return f(ws)+" – "+f(we)};
   // por vehículo
   const byVeh={};
-  rows.forEach(f=>{byVeh[f.vid]=byVeh[f.vid]||{cost:0,gal:0,n:0};
-    byVeh[f.vid].cost+=money(f.cost);byVeh[f.vid].gal+=parseFloat(f.gal)||0;byVeh[f.vid].n++});
+  rows.forEach(f=>{byVeh[f.vid]=byVeh[f.vid]||{cost:0,gal:0,n:0,def:0};
+    byVeh[f.vid].cost+=money(f.cost);byVeh[f.vid].gal+=parseFloat(f.gal)||0;byVeh[f.vid].def+=money(f.defCost);byVeh[f.vid].n++});
   const presets=[["thisWeek",t("prThisWeek")],["lastWeek",t("prLastWeek")],["thisMonth",t("prThisMonth")],["lastMonth",t("prLastMonth")],["d30",t("pr30")],["year",t("prYear")]];
   app.innerHTML=`
     <button class="backbtn" onclick="goBack()">${t("back")}</button>
@@ -1117,15 +1127,16 @@ function renderFuelReport(){
       <div class="kpi"><div class="n">${totGal?totGal.toFixed(1):"0"}</div><div class="l">${t("frGal")}</div></div>
       <div class="kpi"><div class="n">${avg?"$"+avg.toFixed(2):"—"}</div><div class="l">${t("frAvg")}</div></div>
       <div class="kpi"><div class="n">${rows.length}</div><div class="l">${t("frFills")}</div></div>
+      ${totDef?`<div class="kpi"><div class="n">${fmtMoney(totDef)}</div><div class="l">💧 DEF</div></div>`:""}
     </div>
     <div class="section"><h3>${t("frByWeek")}</h3>
-      <div class="body">${weekRows.length?`<table><thead><tr><th>${t("frWeek")}</th><th>${t("frFills")}</th><th>${t("frGal")}</th><th style="text-align:right">${t("frCost")}</th></tr></thead><tbody>${
-        weekRows.map(w=>`<tr><td>${wkLabel(w.start)}</td><td class="mono">${w.n}</td><td class="mono">${w.gal.toFixed(1)}</td><td class="money">${fmtMoney(w.cost)}</td></tr>`).join("")
-      }</tbody><tfoot><tr><td colspan="3">${t("total")}</td><td class="money">${fmtMoney(totCost)}</td></tr></tfoot></table>`:`<div class="empty">${t("none")}</div>`}</div>
+      <div class="body">${weekRows.length?`<table><thead><tr><th>${t("frWeek")}</th><th>${t("frFills")}</th><th>${t("frGal")}</th><th style="text-align:right">💧 DEF</th><th style="text-align:right">${t("frCost")}</th></tr></thead><tbody>${
+        weekRows.map(w=>`<tr><td>${wkLabel(w.start)}</td><td class="mono">${w.n}</td><td class="mono">${w.gal.toFixed(1)}</td><td class="money">${w.def?fmtMoney(w.def):"—"}</td><td class="money">${fmtMoney(w.cost)}</td></tr>`).join("")
+      }</tbody><tfoot><tr><td colspan="4">${t("total")}</td><td class="money">${fmtMoney(totCost)}</td></tr></tfoot></table>`:`<div class="empty">${t("none")}</div>`}</div>
     </div>
     <div class="section"><h3>${t("frByVeh")}</h3>
-      <div class="body">${Object.keys(byVeh).length?`<table><thead><tr><th>${t("frVeh")}</th><th>${t("frFills")}</th><th>${t("frGal")}</th><th style="text-align:right">${t("frCost")}</th></tr></thead><tbody>${
-        Object.entries(byVeh).sort((a,b)=>b[1].cost-a[1].cost).map(([vid,x])=>`<tr><td class="mono"><a href="#/vehiculo/${encodeURIComponent(vid)}">${esc(vid)}</a></td><td class="mono">${x.n}</td><td class="mono">${x.gal.toFixed(1)}</td><td class="money">${fmtMoney(x.cost)}</td></tr>`).join("")
+      <div class="body">${Object.keys(byVeh).length?`<table><thead><tr><th>${t("frVeh")}</th><th>${t("frFills")}</th><th>${t("frGal")}</th><th style="text-align:right">💧 DEF</th><th style="text-align:right">${t("frCost")}</th></tr></thead><tbody>${
+        Object.entries(byVeh).sort((a,b)=>b[1].cost-a[1].cost).map(([vid,x])=>`<tr><td class="mono"><a href="#/vehiculo/${encodeURIComponent(vid)}">${esc(vid)}</a></td><td class="mono">${x.n}</td><td class="mono">${x.gal.toFixed(1)}</td><td class="money">${x.def?fmtMoney(x.def):"—"}</td><td class="money">${fmtMoney(x.cost)}</td></tr>`).join("")
       }</tbody></table>`:`<div class="empty">${t("none")}</div>`}</div>
     </div>
     <div class="section"><h3>${t("secFuel")}<span class="count">${rows.length}</span></h3>
@@ -1337,6 +1348,16 @@ function renderFuelForm(){
     <div class="dstep"><div class="dl"><span class="num">5</span> Costo total ($)</div>
       <input class="dinput mono" inputmode="decimal" value="${esc(DRV.cost)}" placeholder="Ej: 108.30" oninput="DRV.cost=this.value.replace(/[^0-9.]/g,'')">
     </div>
+    ${(DATA.veh.find(x=>x.id===DRV.veh)&&/bucket/i.test(DATA.veh.find(x=>x.id===DRV.veh).type||"")) ? `
+    <div class="dstep" style="border:2px dashed #6ea8d8;border-radius:12px;padding:10px">
+      <div class="dl"><span class="num" style="background:#2b6cb0">💧</span> ¿Echaste DEF? (opcional)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><small>Galones DEF</small>
+          <input class="dinput mono" inputmode="decimal" value="${esc(DRV.defGal||"")}" placeholder="Ej: 2.5" oninput="DRV.defGal=this.value.replace(/[^0-9.]/g,'')"></div>
+        <div><small>Costo DEF ($)</small>
+          <input class="dinput mono" inputmode="decimal" value="${esc(DRV.defCost||"")}" placeholder="Ej: 12.00" oninput="DRV.defCost=this.value.replace(/[^0-9.]/g,'')"></div>
+      </div>
+    </div>`:""}
     <div class="dstep"><div class="dl"><span class="num">6</span> Estación (opcional)</div>
       <input class="dinput" value="${esc(DRV.station)}" placeholder="Ej: Pilot, Wawa..." oninput="DRV.station=this.value">
     </div>
@@ -1362,6 +1383,7 @@ window.sendFuel=async()=>{
   try{
     await sendAction({tipo:"tanqueo",fecha:todayUS(),vehiculo:DRV.veh,conductor:norm(DRV.name),
       millaje:norm(DRV.mi),galones:norm(DRV.gal),costo:norm(DRV.cost),estacion:norm(DRV.station),
+      defGalones:norm(DRV.defGal||""),defCosto:norm(DRV.defCost||""),
       fotos:DRV.photos.filter(Boolean)});
     DRV.sending=false;go("#/ok/tanqueo");
   }catch(e){DRV.sending=false;render();
